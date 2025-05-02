@@ -1,2 +1,1 @@
-web: python medipulseGROQ.py
-
+web: gunicorn medipulseGROQ:app
