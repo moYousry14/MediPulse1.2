@@ -12,7 +12,8 @@ from langchain_groq import ChatGroq
 
 load_dotenv()
 app = Flask(__name__, static_folder="static", template_folder="templates")
-CORS(app) # Enable CORS for all routes
+CORS(app, supports_credentials=True, resources={r"/api/*": {"origins": "https://web-production-9c2e0.up.railway.app"}})
+ # Enable CORS for all routes
 
 # Configure Flask-Session
 app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY", secrets.token_hex(16))
@@ -20,6 +21,9 @@ app.config["SESSION_TYPE"] = "filesystem"
 app.config["SESSION_FILE_DIR"] = "./session_cache"
 app.config["SESSION_PERMANENT"] = True
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(hours=1)
+app.config["SESSION_COOKIE_SAMESITE"] = "None"
+app.config["SESSION_COOKIE_SECURE"] = True
+
 
 Session(app)
 
