@@ -12,7 +12,7 @@ from langchain_groq import ChatGroq
 
 load_dotenv()
 app = Flask(__name__, static_folder="static", template_folder="templates")
-CORS(app, supports_credentials=True, resources={r"/api/*": {"origins": "*"}})
+CORS(app, supports_credentials=True, resources={r"/api/*": {"origins": "https://graduation-project-jet.vercel.app/"}})
  # Enable CORS for all routes
 
 # Configure Flask-Session
