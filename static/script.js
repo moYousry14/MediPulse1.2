@@ -7,8 +7,6 @@ const chatBox = document.getElementById('chat-box');
 const userInput = document.getElementById('user-input');
 const sendButton = document.getElementById('send-button');
 const optionsContainer = document.getElementById('options-container');
-const enBtn = document.getElementById('en-btn');
-const arBtn = document.getElementById('ar-btn');
 const endChatBtn = document.getElementById('end-chat-btn');
 
 const summaryModal = document.getElementById('summary-modal');
@@ -17,7 +15,28 @@ const closeModal = document.querySelector('.close-modal');
 const saveSummaryBtn = document.getElementById('save-summary-btn');
 const newChatBtn = document.getElementById('new-chat-btn');
 
+// New modal for language selection
+const langModal = document.getElementById('language-modal');
+const chooseEn = document.getElementById('choose-en');
+const chooseAr = document.getElementById('choose-ar');
+
+// Initialize
 document.addEventListener('DOMContentLoaded', () => {
+    // Handle language selection
+    langModal.style.display = 'flex';
+
+    chooseEn.addEventListener('click', () => {
+        selectedLanguage = 'en';
+        langModal.style.display = 'none';
+        startSession(true);
+    });
+
+    chooseAr.addEventListener('click', () => {
+        selectedLanguage = 'ar';
+        langModal.style.display = 'none';
+        startSession(true);
+    });
+
     sendButton.addEventListener('click', handleSend);
     userInput.addEventListener('keypress', e => {
         if (e.key === 'Enter' && !e.shiftKey) {
@@ -26,14 +45,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    enBtn.addEventListener('click', () => setLanguage('en'));
-    arBtn.addEventListener('click', () => setLanguage('ar'));
     endChatBtn.addEventListener('click', endChat);
-
     closeModal.addEventListener('click', () => summaryModal.style.display = 'none');
-    newChatBtn.addEventListener('click', () => startSession(true)); // force new session
-
-    startSession(); // auto-start
+    newChatBtn.addEventListener('click', () => {
+        localStorage.removeItem('medipulseSessionId');
+        location.reload(); // Reset everything and show language modal
+    });
 });
 
 async function startSession(forceNew = false) {
@@ -46,8 +63,10 @@ async function startSession(forceNew = false) {
         body: JSON.stringify({ language: selectedLanguage })
     });
     const data = await res.json();
+
     sessionId = data.session_id;
     localStorage.setItem('medipulseSessionId', sessionId);
+
     selectedLanguage = data.language;
     updateLanguageUI();
     displayBotMessage(data.response);
@@ -118,24 +137,7 @@ async function endChat() {
     }
 }
 
-async function setLanguage(lang) {
-    if (!sessionId || lang === selectedLanguage) return;
-    const res = await fetch("/api/set_language", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ session_id: sessionId, language: lang })
-    });
-    const data = await res.json();
-    if (data.status === 'success') {
-        selectedLanguage = data.language;
-        updateLanguageUI();
-    }
-}
-
 function updateLanguageUI() {
-    enBtn.classList.toggle('active', selectedLanguage === 'en');
-    arBtn.classList.toggle('active', selectedLanguage === 'ar');
     document.body.dir = selectedLanguage === 'ar' ? 'rtl' : 'ltr';
     userInput.placeholder = selectedLanguage === 'ar'
         ? 'اكتب رسالتك...'
