@@ -1,23 +1,26 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>MediPulse | AI Medical Assistant</title>
+    <title>MediPulse Chatbot</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="/static/style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
 </head>
 <body>
+    <!-- Language Selection Modal -->
+    <div id="language-modal" class="modal">
+        <div class="modal-content">
+            <h3>Please choose your language</h3>
+            <button id="choose-en" class="lang-option">English</button>
+            <button id="choose-ar" class="lang-option">العربية</button>
+        </div>
+    </div>
+
     <div class="app-container">
         <header>
             <h1><i class="fas fa-heartbeat"></i> MediPulse</h1>
             <div class="header-controls">
-                <div class="language-selector">
-                    <button id="en-btn" class="lang-btn active">English</button>
-                    <button id="ar-btn" class="lang-btn">العربية</button>
-                </div>
-                <button id="history-btn" class="history-btn">
-                    <i class="fas fa-history"></i> History
-                </button>
+                <!-- Removed language and history buttons -->
                 <button id="end-chat-btn" class="end-chat-btn">
                     <i class="fas fa-times-circle"></i> End Chat
                 </button>
@@ -51,46 +54,14 @@
         <div class="modal-content">
             <span class="close-modal">&times;</span>
             <h2>Chat Summary</h2>
-            <div id="chat-summary">
-                <!-- Summary content will be inserted here -->
-            </div>
+            <div id="chat-summary"></div>
             <div class="modal-footer">
                 <button id="save-summary-btn" class="primary-btn">Save Summary</button>
                 <button id="new-chat-btn" class="secondary-btn">New Chat</button>
             </div>
         </div>
     </div>
-    
-    <!-- Modal for chat history -->
-    <div id="history-modal" class="modal">
-        <div class="modal-content">
-            <span class="close-history-modal">&times;</span>
-            <h2>Your Consultation History</h2>
-            <div id="history-container">
-                <!-- History content will be inserted here -->
-                <p id="no-history-message" style="display: none;">You don't have any saved consultations yet.</p>
-                <div id="history-list">
-                    <!-- History entries will be listed here -->
-                </div>
-            </div>
-        </div>
-    </div>
-    
-    <!-- Modal for viewing a specific chat record -->
-    <div id="chat-record-modal" class="modal">
-        <div class="modal-content">
-            <span class="close-record-modal">&times;</span>
-            <h2>Consultation Record</h2>
-            <div id="chat-record-container">
-                <!-- Individual record will be displayed here -->
-            </div>
-            <div class="modal-footer">
-                <button id="delete-record-btn" class="danger-btn">Delete Record</button>
-                <button id="close-record-btn" class="secondary-btn">Close</button>
-            </div>
-        </div>
-    </div>
-    
+
     <script src="/static/script.js"></script>
 </body>
 </html>
