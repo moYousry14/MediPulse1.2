@@ -13,7 +13,7 @@ global_session_store = {}
 
 load_dotenv()
 app = Flask(__name__, static_folder="static", template_folder="templates")
-CORS(app, supports_credentials=True, origins=["https://graduation-project-jet.vercel.app"])
+CORS(app, supports_credentials=True, origins=["*"])
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
