@@ -1,5 +1,4 @@
-
-let sessionId = null;
+let sessionId = localStorage.getItem('medipulseSessionId') || null;
 let selectedLanguage = 'en';
 let isProcessing = false;
 
@@ -18,7 +17,6 @@ const closeModal = document.querySelector('.close-modal');
 const saveSummaryBtn = document.getElementById('save-summary-btn');
 const newChatBtn = document.getElementById('new-chat-btn');
 
-// Initialize chat on load
 document.addEventListener('DOMContentLoaded', () => {
     sendButton.addEventListener('click', handleSend);
     userInput.addEventListener('keypress', e => {
@@ -33,12 +31,14 @@ document.addEventListener('DOMContentLoaded', () => {
     endChatBtn.addEventListener('click', endChat);
 
     closeModal.addEventListener('click', () => summaryModal.style.display = 'none');
-    newChatBtn.addEventListener('click', startSession);
+    newChatBtn.addEventListener('click', () => startSession(true)); // force new session
 
-    startSession();
+    startSession(); // auto-start
 });
 
-async function startSession() {
+async function startSession(forceNew = false) {
+    if (!forceNew && sessionId) return;
+
     const res = await fetch("/api/start", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -47,6 +47,7 @@ async function startSession() {
     });
     const data = await res.json();
     sessionId = data.session_id;
+    localStorage.setItem('medipulseSessionId', sessionId);
     selectedLanguage = data.language;
     updateLanguageUI();
     displayBotMessage(data.response);
@@ -78,8 +79,9 @@ async function sendMessage(message) {
 
     if (data.error) {
         if (data.action === "restart") {
+            localStorage.removeItem('medipulseSessionId');
             displayBotMessage(data.error);
-            setTimeout(startSession, 1000);
+            setTimeout(() => startSession(true), 1000);
         } else {
             displayBotMessage(`⚠️ Error: ${data.error}`);
         }
@@ -102,6 +104,14 @@ async function endChat() {
         body: JSON.stringify({ session_id: sessionId })
     });
     const data = await res.json();
+
+    if (data.error && data.action === "restart") {
+        localStorage.removeItem('medipulseSessionId');
+        displayBotMessage(data.error);
+        setTimeout(() => startSession(true), 1000);
+        return;
+    }
+
     if (data.summary) {
         chatSummary.innerHTML = data.summary;
         summaryModal.style.display = 'block';
