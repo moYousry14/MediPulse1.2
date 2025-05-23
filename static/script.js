@@ -89,6 +89,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const res = await fetch('/api/start', { 
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
                 body: JSON.stringify({ language: selectedLanguage })
             });
             
@@ -139,6 +140,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const res = await fetch('/api/chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
                 body: JSON.stringify({ 
                     session_id: sessionId, 
                     message 
@@ -200,6 +202,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const res = await fetch('/api/end_chat', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                credentials: 'include',
                 body: JSON.stringify({ 
                     session_id: sessionId,
                     language: selectedLanguage 
@@ -448,6 +451,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const res = await fetch('/api/set_language', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
+                credentials: 'include', 
                 body: JSON.stringify({ language: lang })
             });
             
