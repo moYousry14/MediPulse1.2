@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timedelta
 from flask import Flask, request, jsonify, render_template, session
 from flask_cors import CORS
-from flask_session import Session  # Import Flask-Session
+from flask_session import Session
 from dotenv import load_dotenv
 from langchain.schema import SystemMessage, HumanMessage, AIMessage
 from langchain.memory import ConversationBufferMemory
@@ -12,10 +12,8 @@ from langchain_groq import ChatGroq
 
 load_dotenv()
 app = Flask(__name__, static_folder="static", template_folder="templates")
-CORS(app, supports_credentials=True, origins=["https://graduation-project-jet.vercel.app"])
- # Enable CORS for all routes
+CORS(app, supports_credentials=True, origins="*")
 
-# Configure Flask-Session
 app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY", secrets.token_hex(16))
 app.config["SESSION_TYPE"] = "filesystem"
 app.config["SESSION_FILE_DIR"] = "./session_cache"
@@ -24,21 +22,16 @@ app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(hours=1)
 app.config["SESSION_COOKIE_SAMESITE"] = "None"
 app.config["SESSION_COOKIE_SECURE"] = True
 
-
 Session(app)
 
-# Configure Logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-# Initialize Groq LLM
 llm = ChatGroq(
     model_name="llama3-70b-8192",
     temperature=0.1,
     api_key=os.getenv("GROQ_API_KEY")
 )
 
-# --- Medical Prompt Configuration v4.0 ---
-# Updated prompt structure with question guidelines embedded
 MEDICAL_PROMPT_BASE = """
 **Medical Assistant Protocol v4.1**
 
@@ -142,228 +135,121 @@ PROMPT_COMPONENTS = {
 }
 
 def get_dynamic_prompt(language='en'):
-    """Generates the full system prompt by injecting language components into the base."""
     lang_code = language.lower()
     if lang_code not in PROMPT_COMPONENTS:
-        lang_code = 'en'  # Default to English if language is unsupported
-    
+        lang_code = 'en'
+
     components = PROMPT_COMPONENTS[lang_code]
-    
-    # Use string formatting to inject components into the base prompt
-    try:
-        prompt = MEDICAL_PROMPT_BASE.format(
-            language_instruction=components["language_instruction"],
-            emergency_text=components["emergency_text"],
-            otc_disclaimer=components["otc_disclaimer"],
-            diagnostic_test_referral=components["diagnostic_test_referral"],
-            assessment_start_disclaimer=components["assessment_start_disclaimer"],
-            final_disclaimer=components["final_disclaimer"],
-            off_topic_response=components["off_topic_response"]
-        )
-    except KeyError as e:
-        logging.error(f"Missing key in PROMPT_COMPONENTS for language '{lang_code}': {e}")
-        # Fallback to English prompt if formatting fails
-        components = PROMPT_COMPONENTS["en"]
-        prompt = MEDICAL_PROMPT_BASE.format(
-            language_instruction=components["language_instruction"],
-            emergency_text=components["emergency_text"],
-            otc_disclaimer=components["otc_disclaimer"],
-            diagnostic_test_referral=components["diagnostic_test_referral"],
-            assessment_start_disclaimer=components["assessment_start_disclaimer"],
-            final_disclaimer=components["final_disclaimer"],
-            off_topic_response=components["off_topic_response"]
-        )
-        
+    prompt = MEDICAL_PROMPT_BASE.format(
+        language_instruction=components["language_instruction"],
+        emergency_text=components["emergency_text"],
+        otc_disclaimer=components["otc_disclaimer"],
+        diagnostic_test_referral=components["diagnostic_test_referral"],
+        assessment_start_disclaimer=components["assessment_start_disclaimer"],
+        final_disclaimer=components["final_disclaimer"],
+        off_topic_response=components["off_topic_response"]
+    )
     return prompt
 
-# Helper function to extract options from LLM response
 def extract_options(message):
-    """Extract options from message formatted with [OPTIONS: option1, option2, ...]"""
     import re
-    
-    # Look for the options pattern in the message
     options_pattern = r'\[OPTIONS:\s*(.*?)\]'
     match = re.search(options_pattern, message)
-    
     if match:
         options_str = match.group(1)
-        
-        # Handle both English and Arabic commas
-        # Arabic comma: '،' (different from English comma ',')
-        if '،' in options_str:
-            options = [opt.strip() for opt in options_str.split('،')]
-        else:
-            options = [opt.strip() for opt in options_str.split(',')]
-        
-        # Remove any empty options
-        options = [opt for opt in options if opt]
-        
-        # Replace the options pattern with empty string to clean the message
+        options = [opt.strip() for opt in re.split('[،,]', options_str) if opt.strip()]
         clean_message = re.sub(options_pattern, '', message).strip()
         return clean_message, options
-    
     return message, None
 
 @app.route("/api/start", methods=["POST"])
 def start_chat():
     data = request.get_json() or {}
     language = data.get("language", "en").lower()
-    
     if language not in PROMPT_COMPONENTS:
-        language = "en"  # Default to English if invalid language
-    
+        language = "en"
+
     session.clear()
     session["memory_history"] = []
     session["language"] = language
     session["created_at"] = datetime.now().isoformat()
-    
-    # Initialize LLM interaction
-    system_prompt = get_dynamic_prompt(language)
-    
-    try:
-        # Prepare initial greeting message based on language
-        if language == "ar":
-            initial_message = "مرحباً! أنا MediPulse، المساعد الطبي الرقمي. كيف يمكنني مساعدتك اليوم؟ يرجى وصف الأعراض أو المخاوف الصحية التي تواجهها."
-        else:
-            initial_message = "Hello! I'm MediPulse, your digital medical assistant. How can I help you today? Please describe the symptoms or health concerns you're experiencing."
-        
-        logging.info(f"New session started: {session.sid}, language: {language}")
-        return jsonify({
-            "session_id": session.sid,
-            "response": initial_message, 
-            "language": language
-        })
-    except Exception as e:
-        error_msg = "An error occurred starting the session" if language == "en" else "حدث خطأ أثناء بدء الجلسة"
-        logging.error(f"Error starting session: {e}", exc_info=True)
-        return jsonify({"error": error_msg}), 500
+
+    if language == "ar":
+        initial_message = "مرحباً! أنا MediPulse، المساعد الطبي الرقمي. كيف يمكنني مساعدتك اليوم؟ يرجى وصف الأعراض أو المخاوف الصحية التي تواجهها."
+    else:
+        initial_message = "Hello! I'm MediPulse, your digital medical assistant. How can I help you today? Please describe the symptoms or health concerns you're experiencing."
+
+    logging.info(f"New session started: {session.sid}, language: {language}")
+    return jsonify({
+        "session_id": session.sid,
+        "response": initial_message,
+        "language": language
+    })
 
 @app.route("/api/chat", methods=["POST"])
 def handle_chat():
     data = request.get_json()
-    
     if "memory_history" not in session:
         logging.warning(f"Invalid or expired session access attempt: {session.sid}")
         return jsonify({"error": "Invalid or expired session. Please start a new chat.", "action": "restart"}), 401
 
     user_input = data["message"].strip()
     language = session.get("language", "en")
-    
-    # Rebuild memory object from history stored in session
+
     memory = ConversationBufferMemory(return_messages=True)
     for msg_input, msg_output in session["memory_history"]:
         memory.save_context({"input": msg_input}, {"output": msg_output})
 
-    try:
-        # Get the correct system prompt based on selected language
-        system_prompt = get_dynamic_prompt(language)
-        
-        # Prepare messages for LLM
-        messages = [
-            SystemMessage(content=system_prompt),
-            *memory.load_memory_variables({})["history"],
-            HumanMessage(content=user_input)
-        ]
-        
-        # Invoke LLM
-        logging.info(f"Invoking LLM for session {session.sid} ({language})")
-        response = llm.invoke(messages).content
-        logging.info(f"LLM response received for session {session.sid} ({language})")
-        
-        # Process response to extract options if present
-        clean_response, options = extract_options(response)
-        
-        # Save context to memory object (and update session history)
-        memory.save_context(
-            {"input": user_input},
-            {"output": response}  # Save the original response with options
-        )
-        session["memory_history"].append((user_input, response))
-        
-        response_data = {"response": clean_response}
-        if options:
-            response_data["options"] = options
-        
-        return jsonify(response_data)
-    except Exception as e:
-        error_msg = "An internal error occurred" if language == "en" else "حدث خطأ داخلي"
-        logging.error(f"Error during chat for session {session.sid} ({language}): {e}", exc_info=True)
-        return jsonify({"error": error_msg}), 500
+    system_prompt = get_dynamic_prompt(language)
+    messages = [
+        SystemMessage(content=system_prompt),
+        *memory.load_memory_variables({})["history"],
+        HumanMessage(content=user_input)
+    ]
+    response = llm.invoke(messages).content
+    clean_response, options = extract_options(response)
+    memory.save_context({"input": user_input}, {"output": response})
+    session["memory_history"].append((user_input, response))
+
+    response_data = {"response": clean_response}
+    if options:
+        response_data["options"] = options
+    return jsonify(response_data)
 
 @app.route("/api/end_chat", methods=["POST"])
 def end_chat():
     data = request.get_json()
-    
     if "memory_history" not in session:
         logging.warning(f"Invalid or expired session access attempt: {session.sid}")
         return jsonify({"error": "Invalid or expired session. Please start a new chat.", "action": "restart"}), 401
 
     language = session.get("language", "en")
-    
-    try:
-        # Rebuild memory object from history stored in session
-        memory = ConversationBufferMemory(return_messages=True)
-        for msg_input, msg_output in session["memory_history"]:
-            memory.save_context({"input": msg_input}, {"output": msg_output})
-        
-        # Create a summary prompt based on language
-        if language == "ar":
-            summary_prompt = """
-            استناداً إلى المحادثة السابقة، قم بإنشاء ملخص طبي موجز (250 كلمة كحد أقصى) يتضمن:
+    memory = ConversationBufferMemory(return_messages=True)
+    for msg_input, msg_output in session["memory_history"]:
+        memory.save_context({"input": msg_input}, {"output": msg_output})
 
-            1. الأعراض الرئيسية التي ذكرها المريض
-            2. المعلومات المهمة مثل العمر والحالات الصحية الموجودة مسبقاً
-            3. النصائح العامة التي قدمتها
-            4. أي إرشادات للمتابعة
+    summary_prompt = PROMPT_COMPONENTS[language]["summary_prompt"] if language == "ar" else PROMPT_COMPONENTS["en"]["summary_prompt"]
 
-            يجب أن يكون الملخص منظماً بتنسيق واضح مع عناوين فرعية. تذكر أن تشمل تنويهاً أن هذا ليس تشخيصاً طبياً رسمياً.
-            """
-        else:
-            summary_prompt = """
-            Based on the previous conversation, create a concise medical summary (maximum 250 words) that includes:
-
-            1. The main symptoms reported by the patient
-            2. Important information like age and pre-existing conditions
-            3. The general advice you provided
-            4. Any follow-up recommendations
-            
-            The summary should be organized with clear formatting and subheadings. Remember to include a disclaimer that this is not an official medical diagnosis.
-            """
-        
-        # Prepare messages for LLM
-        messages = [
-            SystemMessage(content="You are a medical summarizer that creates clear, concise summaries of medical conversations."),
-            *memory.load_memory_variables({})["history"],
-            HumanMessage(content=summary_prompt)
-        ]
-        
-        # Invoke LLM
-        logging.info(f"Generating summary for session {session.sid} ({language})")
-        summary = llm.invoke(messages).content
-        logging.info(f"Summary generated for session {session.sid} ({language})")
-        
-        return jsonify({"summary": summary})
-    
-    except Exception as e:
-        error_msg = "An error occurred generating the summary" if language == "en" else "حدث خطأ أثناء إنشاء الملخص"
-        logging.error(f"Error generating summary for session {session.sid} ({language}): {e}", exc_info=True)
-        return jsonify({"error": error_msg}), 500
+    messages = [
+        SystemMessage(content="You are a medical summarizer that creates clear, concise summaries of medical conversations."),
+        *memory.load_memory_variables({})["history"],
+        HumanMessage(content=summary_prompt)
+    ]
+    summary = llm.invoke(messages).content
+    return jsonify({"summary": summary})
 
 @app.route("/api/set_language", methods=["POST"])
 def set_language():
-    """Endpoint to update session language preference"""
     if "memory_history" not in session:
         return jsonify({"error": "Invalid or expired session. Please start a new chat.", "action": "restart"}), 401
-    
+
     data = request.get_json()
     language = data.get("language", "en").lower()
-    
     if language not in PROMPT_COMPONENTS:
         return jsonify({"error": "Unsupported language"}), 400
-    
+
     session["language"] = language
     logging.info(f"Session {session.sid} language updated to: {language}")
-    
     return jsonify({"status": "success", "language": language})
 
 @app.route("/")
@@ -371,5 +257,4 @@ def home():
     return render_template("index.html")
 
 # if __name__ == "__main__":
-#    app.run()
-
+#     app.run()
