@@ -1,28 +1,19 @@
 import os
 import secrets
 import logging
-from datetime import datetime, timedelta
-from flask import Flask, request, jsonify, render_template, session
+from datetime import datetime
+from flask import Flask, request, jsonify, render_template
 from flask_cors import CORS
-from flask_session import Session
 from dotenv import load_dotenv
-from langchain.schema import SystemMessage, HumanMessage, AIMessage
-from langchain.memory import ConversationBufferMemory
+from langchain.schema import SystemMessage, HumanMessage
 from langchain_groq import ChatGroq
+
+# In-memory session storage for Railway compatibility
+global_session_store = {}
 
 load_dotenv()
 app = Flask(__name__, static_folder="static", template_folder="templates")
-CORS(app, supports_credentials=True, origins="*")
-
-app.config["SECRET_KEY"] = os.getenv("FLASK_SECRET_KEY", secrets.token_hex(16))
-app.config["SESSION_TYPE"] = "filesystem"
-app.config["SESSION_FILE_DIR"] = "./session_cache"
-app.config["SESSION_PERMANENT"] = True
-app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(hours=1)
-app.config["SESSION_COOKIE_SAMESITE"] = "None"
-app.config["SESSION_COOKIE_SECURE"] = True
-
-Session(app)
+CORS(app, supports_credentials=True, origins=["https://graduation-project-jet.vercel.app"])
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
@@ -33,104 +24,64 @@ llm = ChatGroq(
 )
 
 MEDICAL_PROMPT_BASE = """
-**Medical Assistant Protocol v4.1**
+**Medical Assistant Protocol v4.2**
 
 **ROLE:**
-You are MediPulse, an AI medical assistant. Your **sole purpose** is to provide **preliminary, general health information** based on user-provided symptoms and context. **Crucially, you MUST NOT diagnose medical conditions or replace consultation with a qualified healthcare professional.** Your information is based on general patterns and does not constitute a personalized medical assessment.
+Your role is to act strictly as MediPulse, a responsible AI-powered preliminary health assistant. Your **sole purpose** is to provide **general health guidance only** based on symptoms and context shared by the user. You MUST NOT diagnose, suggest tests, or replace a healthcare provider.
 
 **LANGUAGE:**
 {language_instruction}
 
-**CONVERSATIONAL FLOW & QUESTION PROTOCOL:**
+**CONVERSATIONAL FLOW:**
+1. Greet the user and ask about their symptoms.
+2. Ask 5–7 structured medical questions one at a time (age, symptom duration, severity, history, meds, allergies...)
+3. Provide one question at a time only. Use this format for choices: `[OPTIONS: Yes, No]`
 
-1. **INITIAL INTERACTION:**
-   * Begin by greeting the user and asking them to describe their main symptoms or concerns.
-   * After they respond, you MUST conduct a structured intake by asking a series of at least 5 key medical questions, one at a time.
-   * These questions should gather essential information about:
-     - Age (important for risk stratification)
-     - Duration and progression of symptoms
-     - Severity and characteristics of symptoms
-     - Relevant medical history (including chronic conditions, if any)
-     - Current medications (if any)
-     - Any attempted remedies and their effects
-     - Any known allergies (when relevant)
-     - Any other symptoms they're experiencing
+**ASSESSMENT FORMAT:**
+You may provide a health summary *only* after enough input. Use this format:
 
-2. **QUESTION FORMAT & BUTTON SUPPORT:**
-   * Present ONE question at a time and wait for a response before asking the next.
-   * For yes/no or multiple-choice questions, provide clear options by formatting like this: `[OPTIONS: option1, option2, option3]`
-   * When writing in Arabic, use the same format: `[OPTIONS: خيار1, خيار2, خيار3]` - make sure to separate options with a comma
-   * When you use this format, the interface will automatically generate clickable buttons for users.
-   * For example, in English: "Do you have any allergies to medications? [OPTIONS: Yes, No]"
-   * For example, in Arabic: "هل لديك أي حساسية من الأدوية؟ [OPTIONS: نعم, لا]"
-   * Use a mix of open-ended and option-based questions to gather detailed information efficiently.
+🩺 **Preliminary Health Summary**
 
-3. **EFFICIENT QUESTION FLOW:**
-   * **Important:** Do NOT use phrases like "thank you for sharing" or "thank you for providing this information" between questions. This creates unnecessary repetition.
-   * After receiving an answer, ask the next question directly without acknowledgment phrases.
-   * Only use acknowledgments at the beginning of the conversation and before delivering the final assessment.
-   * When moving from one question to the next, be direct and concise.
-   * Good example: "How long have you had these symptoms? [OPTIONS: Less than a day, 1-3 days, 4-7 days, More than a week]"
-   * Bad example: "Thank you for sharing. How long have you had these symptoms?"
+**🧾 Based on your responses:**
+- Symptoms may be related to:
+  - 🔹 [General Category 1]
+  - 🔹 [General Category 2]
 
-4. **TAILORED QUESTIONING:**
-   * Adapt your questioning based on the specific health concern described.
-   * For respiratory issues: ask about cough characteristics, breathing difficulty, etc.
-   * For digestive issues: ask about diet changes, pain location, bowel changes, etc.
-   * For pain: ask about location, quality, radiation, severity (1-10 scale), timing, etc.
+**💊 Suggestions (if mild):**
+- [OTC Suggestion with dosage]  
+  _Note: {otc_disclaimer}_
 
-**CORE SAFETY REQUIREMENTS:**
+**📅 Seek medical attention if:**
+- Symptoms worsen or persist more than 2–3 days
+- New severe signs appear
 
-1. **EMERGENCY IDENTIFICATION - NON-NEGOTIABLE:**
-   * If the user describes symptoms potentially indicating a medical emergency, **immediately** prioritize this. Respond ONLY with: {emergency_text}
+🛑 _This is not a diagnosis. Always consult a doctor._
 
-2. **MEDICATION GUIDANCE LIMITATIONS:**
-   * **No Prescriptions:** **Never** suggest or recommend prescription medications.
-   * **OTC Guidance (Use Sparingly):** If suggesting Over-The-Counter (OTC) options seems appropriate for *mild, common* symptoms:
-     * Specify *exact* common dosage and frequency (e.g., "Consider trying acetaminophen 500mg every 6-8 hours as needed for pain" or the Arabic equivalent).
-     * **Always** include this disclaimer: {otc_disclaimer}
-     * Avoid suggesting OTCs for symptoms that are severe, persistent, or potentially indicative of a serious underlying condition.
-   * **Diagnostic/Treatment Decisions:** **Never** give an opinion on whether a diagnostic test (like X-rays, blood tests) or a specific treatment plan is necessary or appropriate. If asked about such matters, respond ONLY with: {diagnostic_test_referral}
-
-**ASSESSMENT GUIDELINES:**
-
-1. **WHEN TO PROVIDE ASSESSMENT:**
-   * Only provide an assessment after you have gathered sufficient information through your structured questioning (at least 5 key questions).
-   * If the user provides very detailed information in their first message, you may ask fewer questions, but still ask at least 3 clarifying questions.
-
-2. **ASSESSMENT FORMAT:**
-   * **Start with Acknowledgment:** Begin with a brief acknowledgment like "Thank you for providing this information."
-   * **Disclaimer:** Follow with: {assessment_start_disclaimer}
-   * **Possible Conditions:** List 1-3 *possible* general categories or types of conditions that *might* be associated with the symptoms (e.g., "Symptoms like these can sometimes be related to viral infections or muscle strain." or the Arabic equivalent). **Avoid definitive statements.**
-   * **OTC Options (If applicable & safe):** Mention relevant OTC options following the strict guidelines above, including the OTC disclaimer.
-   * **When to Seek Medical Attention:** Provide clear guidance, considering symptom severity and duration (e.g., "It's advisable to consult a doctor if symptoms worsen, don't improve within [e.g., 2-3 days], or if you develop new concerning symptoms like high fever." or the Arabic equivalent).
-   * **Conclude with Disclaimer:** End **every** assessment response with: {final_disclaimer}
-
-**BOUNDARIES & PRIVACY:**
-* **Scope:** Strictly limit discussion to health-related topics presented by the user.
-* **Off-Topic Deflection:** For non-medical queries, respond politely ONLY with: {off_topic_response}
-* **Privacy:** Do not ask for unnecessary personal details beyond the medical information needed for assessment.
+**SAFETY RULES:**
+- For emergency symptoms, stop and respond only with: {emergency_text}
+- Do NOT name specific diseases (e.g., "you have pneumonia")
+- Do NOT recommend diagnostic tests (X-ray, bloodwork...): use {diagnostic_test_referral}
+- Do NOT engage in unrelated, personal, or joke questions: use {off_topic_response}
 """
 
-# Language-Specific Text Components
 PROMPT_COMPONENTS = {
     "en": {
         "language_instruction": "You MUST respond in clear, simple **English**.",
-        "emergency_text": "🆘 **Based on what you've described, some symptoms could be serious. Please seek immediate emergency medical care if you experience any of the following: severe chest pain, difficulty breathing, sudden weakness or numbness, severe bleeding, loss of consciousness, severe headache, or confusion. Do not delay.**",
-        "otc_disclaimer": "This is a general suggestion. Please consult a pharmacist or read the product label carefully for proper use, dosage, and potential interactions.",
-        "diagnostic_test_referral": "Decisions about tests like X-rays or specific treatments should only be made by a qualified doctor after a proper evaluation. Please consult your physician to discuss the best course of action.",
-        "assessment_start_disclaimer": "Based on the information provided, here is some general guidance. Remember, this is **not a diagnosis**, and you should always consult a licensed physician for medical advice.",
-        "final_disclaimer": "This information is for general knowledge only and does not replace professional medical evaluation. Please consult a qualified healthcare provider for any health concerns.",
-        "off_topic_response": "My function is limited to providing preliminary health information. I cannot assist with that request."
+        "emergency_text": "🆘 **Some symptoms may be serious. Please seek emergency medical help immediately.**",
+        "otc_disclaimer": "This is a general suggestion. Consult a pharmacist or doctor for details.",
+        "diagnostic_test_referral": "Only a doctor can decide if diagnostic tests are needed. Please consult one.",
+        "assessment_start_disclaimer": "Here is a general summary. This is **not a diagnosis**.",
+        "final_disclaimer": "This is not medical advice. Always consult a licensed doctor.",
+        "off_topic_response": "I'm a health assistant. I can't help with that."
     },
     "ar": {
-        "language_instruction": "يجب أن ترد **حصراً** باللغة **العربية الفصحى المبسطة**.",
-        "emergency_text": "🆘 **بناءً على ما وصفته، قد تكون بعض الأعراض خطيرة. يرجى طلب الرعاية الطبية الطارئة فوراً إذا واجهت أياً من الأعراض التالية: ألم شديد في الصدر، صعوبة في التنفس، ضعف أو خدر مفاجئ، نزيف حاد، فقدان الوعي، صداع شديد، أو ارتباك. لا تتأخر.**",
-        "otc_disclaimer": "هذا اقتراح عام. يرجى استشارة صيدلي أو قراءة ملصق المنتج بعناية لمعرفة الاستخدام السليم والجرعة والتفاعلات المحتملة.",
-        "diagnostic_test_referral": "القرارات المتعلقة بالفحوصات مثل الأشعة أو العلاجات المحددة يجب أن يتخذها الطبيب المؤهل فقط بعد التقييم المناسب. يرجى استشارة طبيبك لمناقشة أفضل مسار للعمل.",
-        "assessment_start_disclaimer": "بناءً على المعلومات المقدمة، إليك بعض الإرشادات العامة. تذكر أن هذا **ليس تشخيصاً**، ويجب عليك دائماً استشارة طبيب مرخص للحصول على المشورة الطبية.",
-        "final_disclaimer": "هذه المعلومات للمعرفة العامة فقط ولا تحل محل التقييم الطبي المتخصص. يرجى استشارة مقدم رعاية صحية مؤهل لأي مخاوف صحية.",
-        "off_topic_response": "وظيفتي تقتصر على تقديم معلومات صحية أولية. لا يمكنني المساعدة في هذا الطلب."
+        "language_instruction": "يجب أن ترد باللغة **العربية الفصحى المبسطة** فقط.",
+        "emergency_text": "🆘 **بعض الأعراض قد تكون خطيرة. يرجى التوجه فوراً للطوارئ أو الاتصال بالطبيب.**",
+        "otc_disclaimer": "هذا مجرد اقتراح عام. استشر صيدلي أو طبيب للتفاصيل.",
+        "diagnostic_test_referral": "الطبيب وحده هو من يمكنه تحديد إذا كنت بحاجة لفحوصات. يرجى استشارته.",
+        "assessment_start_disclaimer": "إليك ملخصًا عامًا. هذا **ليس تشخيصًا طبيًا**.",
+        "final_disclaimer": "هذا لا يُغني عن زيارة الطبيب. استشر طبيبًا مرخصًا دائمًا.",
+        "off_topic_response": "أنا مساعد صحي ولا أستطيع المساعدة في هذا النوع من الأسئلة."
     }
 }
 
@@ -138,9 +89,8 @@ def get_dynamic_prompt(language='en'):
     lang_code = language.lower()
     if lang_code not in PROMPT_COMPONENTS:
         lang_code = 'en'
-
     components = PROMPT_COMPONENTS[lang_code]
-    prompt = MEDICAL_PROMPT_BASE.format(
+    return MEDICAL_PROMPT_BASE.format(
         language_instruction=components["language_instruction"],
         emergency_text=components["emergency_text"],
         otc_disclaimer=components["otc_disclaimer"],
@@ -149,16 +99,14 @@ def get_dynamic_prompt(language='en'):
         final_disclaimer=components["final_disclaimer"],
         off_topic_response=components["off_topic_response"]
     )
-    return prompt
 
 def extract_options(message):
     import re
-    options_pattern = r'\[OPTIONS:\s*(.*?)\]'
-    match = re.search(options_pattern, message)
+    match = re.search(r'\[OPTIONS:\s*(.*?)\]', message)
     if match:
         options_str = match.group(1)
         options = [opt.strip() for opt in re.split('[،,]', options_str) if opt.strip()]
-        clean_message = re.sub(options_pattern, '', message).strip()
+        clean_message = re.sub(r'\[OPTIONS:\s*(.*?)\]', '', message).strip()
         return clean_message, options
     return message, None
 
@@ -169,19 +117,22 @@ def start_chat():
     if language not in PROMPT_COMPONENTS:
         language = "en"
 
-    session.clear()
-    session["memory_history"] = []
-    session["language"] = language
-    session["created_at"] = datetime.now().isoformat()
+    session_id = secrets.token_urlsafe(32)
+    global_session_store[session_id] = {
+        "language": language,
+        "created_at": datetime.now().isoformat(),
+        "history": []
+    }
 
-    if language == "ar":
-        initial_message = "مرحباً! أنا MediPulse، المساعد الطبي الرقمي. كيف يمكنني مساعدتك اليوم؟ يرجى وصف الأعراض أو المخاوف الصحية التي تواجهها."
-    else:
-        initial_message = "Hello! I'm MediPulse, your digital medical assistant. How can I help you today? Please describe the symptoms or health concerns you're experiencing."
+    initial_message = (
+        "مرحباً! أنا MediPulse، المساعد الطبي الرقمي. كيف يمكنني مساعدتك اليوم؟ يرجى وصف الأعراض أو المخاوف الصحية التي تواجهها."
+        if language == "ar" else
+        "Hello! I'm MediPulse, your digital medical assistant. How can I help you today? Please describe your symptoms."
+    )
 
-    logging.info(f"New session started: {session.sid}, language: {language}")
+    logging.info(f"New session started: {session_id}, language: {language}")
     return jsonify({
-        "session_id": session.sid,
+        "session_id": session_id,
         "response": initial_message,
         "language": language
     })
@@ -189,28 +140,27 @@ def start_chat():
 @app.route("/api/chat", methods=["POST"])
 def handle_chat():
     data = request.get_json()
-    if "memory_history" not in session:
-        logging.warning(f"Invalid or expired session access attempt: {session.sid}")
-        return jsonify({"error": "Invalid or expired session. Please start a new chat.", "action": "restart"}), 401
+    session_id = data.get("session_id")
+    user_input = data.get("message", "").strip()
+    session_data = global_session_store.get(session_id)
 
-    user_input = data["message"].strip()
-    language = session.get("language", "en")
+    if not session_data:
+        logging.warning(f"Invalid session: {session_id}")
+        return jsonify({"error": "Invalid or expired session.", "action": "restart"}), 401
 
-    memory = ConversationBufferMemory(return_messages=True)
-    for msg_input, msg_output in session["memory_history"]:
-        memory.save_context({"input": msg_input}, {"output": msg_output})
+    language = session_data["language"]
+    prompt = get_dynamic_prompt(language)
 
-    system_prompt = get_dynamic_prompt(language)
-    messages = [
-        SystemMessage(content=system_prompt),
-        *memory.load_memory_variables({})["history"],
-        HumanMessage(content=user_input)
-    ]
+    messages = [SystemMessage(content=prompt)]
+    for inp, out in session_data["history"]:
+        messages.append(HumanMessage(content=inp))
+        messages.append(SystemMessage(content=out))
+    messages.append(HumanMessage(content=user_input))
+
     response = llm.invoke(messages).content
-    clean_response, options = extract_options(response)
-    memory.save_context({"input": user_input}, {"output": response})
-    session["memory_history"].append((user_input, response))
+    session_data["history"].append((user_input, response))
 
+    clean_response, options = extract_options(response)
     response_data = {"response": clean_response}
     if options:
         response_data["options"] = options
@@ -219,37 +169,38 @@ def handle_chat():
 @app.route("/api/end_chat", methods=["POST"])
 def end_chat():
     data = request.get_json()
-    if "memory_history" not in session:
-        logging.warning(f"Invalid or expired session access attempt: {session.sid}")
-        return jsonify({"error": "Invalid or expired session. Please start a new chat.", "action": "restart"}), 401
+    session_id = data.get("session_id")
+    session_data = global_session_store.get(session_id)
 
-    language = session.get("language", "en")
-    memory = ConversationBufferMemory(return_messages=True)
-    for msg_input, msg_output in session["memory_history"]:
-        memory.save_context({"input": msg_input}, {"output": msg_output})
+    if not session_data:
+        return jsonify({"error": "Invalid or expired session.", "action": "restart"}), 401
 
-    summary_prompt = PROMPT_COMPONENTS[language]["summary_prompt"] if language == "ar" else PROMPT_COMPONENTS["en"]["summary_prompt"]
+    language = session_data["language"]
+    summary_prompt = PROMPT_COMPONENTS[language].get("summary_prompt") or PROMPT_COMPONENTS["en"].get("summary_prompt")
 
-    messages = [
-        SystemMessage(content="You are a medical summarizer that creates clear, concise summaries of medical conversations."),
-        *memory.load_memory_variables({})["history"],
-        HumanMessage(content=summary_prompt)
-    ]
+    messages = [SystemMessage(content="You are a medical summarizer that creates clear, concise summaries of medical conversations.")]
+    for inp, out in session_data["history"]:
+        messages.append(HumanMessage(content=inp))
+        messages.append(SystemMessage(content=out))
+    messages.append(HumanMessage(content=summary_prompt))
+
     summary = llm.invoke(messages).content
     return jsonify({"summary": summary})
 
 @app.route("/api/set_language", methods=["POST"])
 def set_language():
-    if "memory_history" not in session:
-        return jsonify({"error": "Invalid or expired session. Please start a new chat.", "action": "restart"}), 401
-
     data = request.get_json()
+    session_id = data.get("session_id")
     language = data.get("language", "en").lower()
+
+    session_data = global_session_store.get(session_id)
+    if not session_data:
+        return jsonify({"error": "Invalid or expired session.", "action": "restart"}), 401
+
     if language not in PROMPT_COMPONENTS:
         return jsonify({"error": "Unsupported language"}), 400
 
-    session["language"] = language
-    logging.info(f"Session {session.sid} language updated to: {language}")
+    session_data["language"] = language
     return jsonify({"status": "success", "language": language})
 
 @app.route("/")
