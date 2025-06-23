@@ -22,7 +22,6 @@ const chooseAr = document.getElementById('choose-ar');
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
-    // Handle language selection
     langModal.style.display = 'flex';
 
     chooseEn.addEventListener('click', () => {
@@ -49,7 +48,7 @@ document.addEventListener('DOMContentLoaded', () => {
     closeModal.addEventListener('click', () => summaryModal.style.display = 'none');
     newChatBtn.addEventListener('click', () => {
         localStorage.removeItem('medipulseSessionId');
-        location.reload(); // Reset everything and show language modal
+        location.reload();
     });
 });
 
@@ -66,7 +65,6 @@ async function startSession(forceNew = false) {
 
     sessionId = data.session_id;
     localStorage.setItem('medipulseSessionId', sessionId);
-
     selectedLanguage = data.language;
     updateLanguageUI();
     displayBotMessage(data.response);
@@ -168,7 +166,12 @@ function displayBotMessage(text, isLoading = false) {
         }
         div.appendChild(loadingDiv);
     } else {
-        div.textContent = text;
+        const cleanText = simplifyFinalResponse(text);
+        cleanText.split('\n').forEach(line => {
+            const p = document.createElement('p');
+            p.textContent = line.trim();
+            div.appendChild(p);
+        });
     }
     chatBox.appendChild(div);
     chatBox.scrollTop = chatBox.scrollHeight;
@@ -186,4 +189,16 @@ function displayOptions(options) {
         };
         optionsContainer.appendChild(button);
     });
+}
+
+// 🧼 Clean + structure bot replies
+function simplifyFinalResponse(text) {
+    if (text.includes("🩺") || text.includes("Preliminary") || text.includes("ملخص مبدئي")) {
+        return text
+            .replace(/[*_#]/g, '')
+            .replace(/🩺|🧠|💊|📅|🛑/g, '\n\n$&') // spacing before section emojis
+            .replace(/\n{2,}/g, '\n\n') // normalize multiple newlines
+            .trim();
+    }
+    return text;
 }
