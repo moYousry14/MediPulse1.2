@@ -64,7 +64,7 @@ It guides people through structured questions, providing general health info —
 
 4. **Create a `.env` file**
     ```
-    FLASK_SECRET_KEY=your_secret_key
+    GROQ_API_KEY=your_secret_key
     # add any other required environment variables
     ```
 
